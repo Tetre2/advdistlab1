@@ -9,10 +9,12 @@ import mcgui.*;
 public class DataMessage extends Message {
         
     String text;
+    public int seq;
         
-    public DataMessage(int sender,String text) {
+    public DataMessage(int sender, String text, int seq) {
         super(sender);
         this.text = text;
+        this.seq = seq;
     }
     
     /**

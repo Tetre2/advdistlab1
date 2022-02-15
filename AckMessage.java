@@ -6,22 +6,15 @@ import mcgui.*;
  *
  * @author Andreas Larsson &lt;larandr@chalmers.se&gt;
  */
-public class AckMessage extends Message {
+public class AckMessage extends Message implements IAck {
         
-    String text;
+    public AckTypes types;
+    public int seq;
         
-    public AckMessage(int sender,String text) {
+    public AckMessage(int sender, AckTypes type, int seq) {
         super(sender);
-        this.text = text;
-    }
-    
-    /**
-     * Returns the text of the message only. The toString method can
-     * be implemented to show additional things useful for debugging
-     * purposes.
-     */
-    public String getText() {
-        return text;
+        this.types = type;
+        this.seq = seq;
     }
     
     public static final long serialVersionUID = 0;

@@ -2,4 +2,4 @@
 
 ./estarter 0 &
 ./estarter 1 &
-./estarter 2 &
+./estarter 2 

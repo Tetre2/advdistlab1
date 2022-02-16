@@ -28,12 +28,12 @@ public class ExampleCaster extends Multicaster {
                     if (queue.size() > 0) {
                         mcui.debug("1");
                         for(int i=0; i < hosts; i++) {
-                            /* Sends to everyone except itself */
                             if(i != id) {
                                 bcom.basicsend(i, new AckMessage(id, AckTypes.AckRequest, seq));
+                                mcui.debug("AckRequest sent to: " + i + " With seq: " + seq);
                             }
                         }
-
+                        
                         sem.acquire();
 
                         if (allHasAcked()) {
@@ -44,6 +44,7 @@ public class ExampleCaster extends Multicaster {
                             for(int i=0; i < hosts; i++) {
                                 if(i != id) {
                                     bcom.basicsend(i, new DataMessage(id, messageText, seq));
+                                    mcui.debug("Message sent to: " + i + " With seq: " + seq);
                                 }
                                 acks[id] = false;
                             }
@@ -90,7 +91,7 @@ public class ExampleCaster extends Multicaster {
         reliableMessageCaster.start();
 
 
-        /*Thread t = new Thread() {
+        Thread t = new Thread() {
             public void run() {
                 while(true){
                     mcui.debug("Timeout started");
@@ -107,8 +108,7 @@ public class ExampleCaster extends Multicaster {
                 }
             }
         };
-        t.start();*/
-
+        t.start();
     }
 
     /**
@@ -127,10 +127,13 @@ public class ExampleCaster extends Multicaster {
      * @param message  The message received
      */
     public void basicreceive(int peer, Message message) {
+        mcui.debug("message arrived");
         if(message instanceof IAck){
-
+            mcui.debug("message arrived 2");
             if(((AckMessage) message).types == AckTypes.Ack){
+                mcui.debug("message arrived 3");
                 if(((AckMessage) message).seq >= seq){
+                    mcui.debug("message arrived 4");
                     acks[peer] = true;
                     mcui.debug("Ack recived");
 
@@ -140,14 +143,20 @@ public class ExampleCaster extends Multicaster {
                     if(allHasAcked()){
                         if(sem.availablePermits() == 0){
                             sem.release();
+                            mcui.debug("All acks has arived");
                         }
                     }
 
                 }
             }else if (((AckMessage) message).types == AckTypes.AckRequest) {
+                mcui.debug("message arrived 5");
                 if(((AckMessage) message).seq >= seq){
+                    mcui.debug("message arrived 6");
                     if(!recivedAckForNewMessage){
+                        seq = ((AckMessage) message).seq;
+                        mcui.debug("message arrived 7");
                         bcom.basicsend(peer, new AckMessage(id, AckTypes.Ack, seq));
+                        mcui.debug("Ack sent to: " + peer + " With seq: " + seq);
                         recivedAckForNewMessage = true;
                         mcui.debug("Ack req revcived");
                     }
@@ -169,6 +178,10 @@ public class ExampleCaster extends Multicaster {
      */
     public void basicpeerdown(int peer) {
         mcui.debug("Peer "+peer+" has been dead for a while now!");
+        alive[peer] = false;
+        if(sem.availablePermits() == 0){
+            sem.release();
+        }
     }
 
     private boolean allHasAcked(){

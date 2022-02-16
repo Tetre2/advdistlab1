@@ -6,15 +6,13 @@ import mcgui.*;
  *
  * @author Andreas Larsson &lt;larandr@chalmers.se&gt;
  */
-public class AckMessage extends Message implements IAck {
+public class SequencerMessage extends Message implements ISequencer {
         
-    public AckTypes types;
-    public int seq;
+    public String msg;
         
-    public AckMessage(int sender, AckTypes type, int seq) {
+    public SequencerMessage(int sender, String msg) {
         super(sender);
-        this.types = type;
-        this.seq = seq;
+        this.msg = msg;
     }
     
     public static final long serialVersionUID = 0;

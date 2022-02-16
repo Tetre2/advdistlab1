@@ -1,4 +1,7 @@
 
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 import java.util.concurrent.Semaphore;
 
 import mcgui.*;
@@ -10,44 +13,113 @@ import mcgui.*;
  */
 public class ExampleCaster extends Multicaster {
 
-    boolean recivedAckForNewMessage;
-    int acks;
-    int seq;
+    public volatile boolean recivedAckForNewMessage;
+    public volatile boolean[] alive;
+    public volatile boolean[] acks;
+    public volatile int seq;
+
+    public volatile Semaphore sem;
+    public volatile List<String> queue;
+
+    public Thread reliableMessageCaster = new Thread(){
+        public void run(){
+            try {
+                while(true){
+                    if (queue.size() > 0) {
+                        mcui.debug("1");
+                        for(int i=0; i < hosts; i++) {
+                            /* Sends to everyone except itself */
+                            if(i != id) {
+                                bcom.basicsend(i, new AckMessage(id, AckTypes.AckRequest, seq));
+                            }
+                        }
+
+                        sem.acquire();
+
+                        if (allHasAcked()) {
+                            seq++;
+                            String messageText = queue.get(0);
+                            queue.remove(0);
+
+                            for(int i=0; i < hosts; i++) {
+                                if(i != id) {
+                                    bcom.basicsend(i, new DataMessage(id, messageText, seq));
+                                }
+                                acks[id] = false;
+                            }
+
+                            mcui.debug("Sent out: \""+messageText+"\"");
+                            mcui.deliver(id, messageText, "from myself!");  
+                        }
+
+
+                    }else{
+                        sem.acquire();
+                    }
+                }
+
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+
+        }
+    };
+
+
     /**
      * No initializations needed for this simple one
      */
     public void init() {
         mcui.debug("The network has "+hosts+" hosts!");
-        acks = 0;
+        alive = new boolean[hosts];
+        acks = new boolean[hosts];
+
+        for (int i = 0; i < alive.length; i++) {
+            alive[i] = true;
+        }
+
+        for (int i = 0; i < acks.length; i++) {
+            acks[i] = false;
+        }
+        
         seq = 0;
         recivedAckForNewMessage = false;
+        sem = new Semaphore(0);
+        queue = new ArrayList<String>();
+
+        reliableMessageCaster.start();
+
+
+        /*Thread t = new Thread() {
+            public void run() {
+                while(true){
+                    mcui.debug("Timeout started");
+                    try {
+                        sleep(1000);
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+                    mcui.debug("Timeour done!");
+                    mcui.debug(Arrays.toString(alive) + " | " + Arrays.toString(acks));
+                    if(sem.availablePermits() == 0){
+                        sem.release();
+                    }
+                }
+            }
+        };
+        t.start();*/
+
     }
-        
+
     /**
      * The GUI calls this module to multicast a message
      */
     public void cast(String messagetext) {
-        for(int i=0; i < hosts; i++) {
-            /* Sends to everyone except itself */
-            if(i != id) {
-                bcom.basicsend(i, new AckMessage(id, AckTypes.AckRequest, seq));
-            }
+        queue.add(messagetext);
+        if(sem.availablePermits() == 0){
+            sem.release();
         }
-        seq++;
-
-        
-
-        for(int i=0; i < hosts; i++) {
-            if(i != id) {
-                bcom.basicsend(i, new DataMessage(id, messagetext, seq));
-                acks = 0;
-            }
-        }
-
-        mcui.debug("Sent out: \""+messagetext+"\"");
-        mcui.deliver(id, messagetext, "from myself!");  
-    
-        //cast(messagetext);
+        mcui.debug("Cast message");
     }
     
     /**
@@ -59,11 +131,16 @@ public class ExampleCaster extends Multicaster {
 
             if(((AckMessage) message).types == AckTypes.Ack){
                 if(((AckMessage) message).seq >= seq){
-                    acks++;
+                    acks[peer] = true;
                     mcui.debug("Ack recived");
 
-                    if(acks == hosts){
-                        
+
+                    mcui.debug(Arrays.toString(alive) + " | " + Arrays.toString(acks));
+
+                    if(allHasAcked()){
+                        if(sem.availablePermits() == 0){
+                            sem.release();
+                        }
                     }
 
                 }
@@ -93,4 +170,21 @@ public class ExampleCaster extends Multicaster {
     public void basicpeerdown(int peer) {
         mcui.debug("Peer "+peer+" has been dead for a while now!");
     }
+
+    private boolean allHasAcked(){
+        for (int node = 0; node < hosts; node++) {
+            if(node == id){
+                continue;
+            }
+            if(alive[node] && !acks[node]){ //if node is alive and has not acked, return false
+                return false;
+            }
+        }
+        mcui.debug(Arrays.toString(alive) + " | " + Arrays.toString(acks));
+        return true;
+    }
+
+    
 }
+
+

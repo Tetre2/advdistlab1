@@ -66,9 +66,7 @@ public class ExampleCaster extends Multicaster {
             while (iterator.hasNext()) {
                 Touple touple = iterator.next();
                 // the id is checked since two nodes could send the same msgtext, and so one would thing the otherones message was its own when in reality the sequencer might ahve droped the message
-                mcui.debug("Queue item: " + touple.sender + " | " + id + ". msg: " + touple.msg + " | " + ((SequencerMessage) message).msg);
                 if(touple.sender == id && touple.msg.equals(((SequencerMessage) message).msg)){
-                    mcui.debug("removed item from queue");
                     iterator.remove();
                 }
             }
@@ -82,9 +80,7 @@ public class ExampleCaster extends Multicaster {
                 while (iterator.hasNext()) {
                     Touple touple = iterator.next();
                     // the id is checked since two nodes could send the same msgtext, and so one would thing the otherones message was its own when in reality the sequencer might ahve droped the message
-                    mcui.debug("Queue item: " + touple.sender + " | " + id + ". msg: " + touple.msg + " | " + ((DataMessage)message).text);
                     if(touple.sender == id && touple.msg.equals(((DataMessage)message).text)){
-                        mcui.debug("removed item from queue");
                         iterator.remove();
                     }
                 }

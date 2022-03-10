@@ -121,6 +121,12 @@ public class ExampleCaster extends Multicaster {
                 }
             }
 
+            for (int i = 0; i < alive.length; i++) {
+                if(alive[i] && i != id){
+                    bcom.basicsend(i, new SetNewSequnecer(id, peer, sequencerNode));
+                }
+            }
+
             // some messages could be lost during the timeout, therefore check the queue and send again
             for (Touple touple : queue) {
                 bcom.basicsend(sequencerNode, new SequencerMessage(id, touple.msg));

@@ -1,6 +1,6 @@
 
 import mcgui.*;
-public class TokenMessage extends Message implements IToken{
+public class TokenMessage extends Message implements ITokenMessage{
         
     Token token;
         

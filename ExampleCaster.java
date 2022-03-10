@@ -1,5 +1,7 @@
 
+import java.util.ArrayList;
 import java.util.LinkedList;
+import java.util.List;
 import java.util.Queue;
 
 import mcgui.*;
@@ -12,9 +14,13 @@ import mcgui.*;
 public class ExampleCaster extends Multicaster {
 
     boolean[] alive;        // array for dead/alive nodes
-    Queue<Msg> queue = new LinkedList<Msg>();;     // fifo queue
+    Queue<Msg> queue;     // fifo queue
     int lastAddedSeq;
-    Object localToken;
+    Token localToken;
+    boolean hasTheToken;
+    List<PeerDownResponse> PeerDownResponses;
+
+
     /**
      * No initializations needed for this simple one
      */
@@ -26,7 +32,8 @@ public class ExampleCaster extends Multicaster {
             alive[i] = true;
         }
 
-        
+        queue = new LinkedList<Msg>();
+        PeerDownResponses = new ArrayList<>();
     }
 
     /**
@@ -50,19 +57,85 @@ public class ExampleCaster extends Multicaster {
      * @param message  The message received
      */
     public void basicreceive(int peer, Message message) {
+        if(message instanceof ITokenMessage){
+            receiveToken(peer, (ITokenMessage) message);
+            
+        }else if(message instanceof ITokenResponse){
+            hasTheToken = false;
 
-        Token token = ((IToken) message).getToken();
+        }else if(message instanceof IPeerDownMessage){
+            PeerDownMessage msg = (PeerDownMessage) message;
+            alive[msg.getDeadPeer()] = false;
+            bcom.basicsend(msg.getSender(), new PeerDownResponse(id, hasTheToken, localToken));
 
-        //mcui.debug("islocked: " + token.isLocked() + " | mgs size: " + token.getMessages().size());
+        }else if(message instanceof IPeerDownResponse){
+            recivePeerDownResponse(peer, (IPeerDownResponse) message);
+        }
+        
+    }
 
-        if(localToken == null || token.getSeq() > ((Token) localToken).getSeq()){
+    /**
+     * Signals that a peer is down and has been down for a while to
+     * allow for messages taking different paths from this peer to
+     * arrive.
+     * @param peer	The dead peer
+     */
+    public void basicpeerdown(int peer) {
+        mcui.debug("Peer "+peer+" has been dead for a while now!");
+        if(alive[peer]){ //if not updated by other nodes
+            alive[peer] = false;
+            for (int i = 0; i < alive.length; i++) { //notify all other nodes about the dead peer
+                if(alive[i] && i != id){
+                    bcom.basicsend(i, new PeerDownMessage(id, peer));
+                }
+            }
+        }
+    }
+
+    private void recivePeerDownResponse(int peer, IPeerDownResponse message){
+        PeerDownResponse msg = (PeerDownResponse) message;
+            PeerDownResponses.add(msg);
+
+            if(PeerDownResponses.size() >= getAliveNodes() - 1){ //exclude yourself
+                boolean tokenExists = false;
+                for (PeerDownResponse peerDownResponse : PeerDownResponses) {
+                    if(peerDownResponse.hasActiveToken()){
+                        tokenExists = true;
+                        break;
+                    }   
+                }
+
+                if( !tokenExists){ //if no one has the token meaning it has been lost, recreate it
+                    Token tokenWithHighestSeq = PeerDownResponses.get(0).getLocalToken();
+                    for (PeerDownResponse peerDownResponse : PeerDownResponses) {
+                        if(peerDownResponse.getLocalToken().getSeq() > tokenWithHighestSeq.getSeq()){
+                            tokenWithHighestSeq = peerDownResponse.getLocalToken();
+                        }
+                    }
+                    bcom.basicsend(getNextNodeInRing(), new TokenMessage(id, tokenWithHighestSeq));
+                }
+
+                
+            }
+    }
+
+    private void receiveToken(int peer, ITokenMessage message){
+
+        bcom.basicsend(peer, new TokenResponse(id)); //ack the token
+        hasTheToken = true;
+
+        Token token = message.getToken();
+
+        mcui.debug("islocked: " + token.isLocked() + " | mgs size: " + token.getMessages().size());
+
+        if(localToken == null || token.getSeq() > (localToken).getSeq()){
 
             Msg latestMsg = token.getMessages().get(token.getMessages().size() - 1);
             mcui.deliver(latestMsg.getSender(), latestMsg.getMsg());
         }
 
         try {
-            localToken = token.clone();
+            localToken = (Token) token.clone();
         } catch (CloneNotSupportedException e) {
             e.printStackTrace();
         }
@@ -78,19 +151,8 @@ public class ExampleCaster extends Multicaster {
                 token.setLock(true);
             }
         }
-
         
         bcom.basicsend(getNextNodeInRing(), new TokenMessage(id, token));
-    }
-
-    /**
-     * Signals that a peer is down and has been down for a while to
-     * allow for messages taking different paths from this peer to
-     * arrive.
-     * @param peer	The dead peer
-     */
-    public void basicpeerdown(int peer) {
-        mcui.debug("Peer "+peer+" has been dead for a while now!");
     }
 
     //used in the queue to make sure a message is broudcast
@@ -100,6 +162,16 @@ public class ExampleCaster extends Multicaster {
             next = (next + 1) % hosts;
         }
         return next;
+    }
+
+    private int getAliveNodes(){
+        int sum = 0;
+        for (boolean b : alive) {
+            if(b){
+                sum++;
+            }
+        }
+        return sum;
     }
 
 }

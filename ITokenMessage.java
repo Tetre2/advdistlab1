@@ -1,4 +1,4 @@
 
-public interface IToken {
+public interface ITokenMessage {
     public Token getToken();
 }

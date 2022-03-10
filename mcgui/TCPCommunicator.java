@@ -88,7 +88,7 @@ public class TCPCommunicator implements BasicCommunicator {
          * The time to wait before all forwarded messages from a
          * crashed process are assumed to have been received
          */
-        public static final int CRASHWAITTIME = 5000;
+        public static final int CRASHWAITTIME = 500;
         
         TCPCommunicator com;
         Multicaster mc;

@@ -1,7 +1,6 @@
 
-import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.List;
+import java.util.LinkedList;
+import java.util.Queue;
 
 import mcgui.*;
 
@@ -13,10 +12,9 @@ import mcgui.*;
 public class ExampleCaster extends Multicaster {
 
     boolean[] alive;        // array for dead/alive nodes
-    int sequencerNode;      // the current sequencer node
-    int seqNumb;            // the local sequence number
-    List<Touple> queue;     // fifo queue of touples for reliabillity, if a sequencer dies the messages might be lost and needs to be resent
-
+    Queue<Msg> queue = new LinkedList<Msg>();;     // fifo queue
+    int lastAddedSeq;
+    Object localToken;
     /**
      * No initializations needed for this simple one
      */
@@ -28,18 +26,23 @@ public class ExampleCaster extends Multicaster {
             alive[i] = true;
         }
 
-        sequencerNode = 0;
-        seqNumb = 0;
-
-        queue = new ArrayList<>();
+        
     }
 
     /**
      * The GUI calls this module to multicast a message
      */
     public void cast(String messagetext) {
-        queue.add(new Touple(id, messagetext));
-        bcom.basicsend(sequencerNode, new SequencerMessage(id, messagetext));
+        queue.add(new Msg(id, messagetext));
+        mcui.debug("queue added: " + messagetext + " | total queue size: " + queue.size());
+
+        if(localToken == null){ // cant think of a better way to create the initial token :(
+            Token t = new Token();
+            t.addMessage(queue.remove());
+            lastAddedSeq = t.getSeq();
+            t.setLock(true);
+            bcom.basicsend(getNextNodeInRing(), new TokenMessage(id, t));
+        }
     }
     
     /**
@@ -47,59 +50,37 @@ public class ExampleCaster extends Multicaster {
      * @param message  The message received
      */
     public void basicreceive(int peer, Message message) {
-        if(message instanceof ISequencer){
-            
-            seqNumb++;
 
-            for (int i = 0; i < hosts; i++) {
-                if(i != id){
-                    bcom.basicsend(i, new DataMessage(peer, ((SequencerMessage) message).msg, seqNumb));
-                    mcui.debug("sequencer sending to " + i);
-                }
-            }
-            
-            //update the sequencer localy, becouse apparently a node cant send a message to itself :(
-            mcui.deliver(peer, ((SequencerMessage)message).msg);
+        Token token = ((IToken) message).getToken();
 
-            // if the sender of a sertain message recives it, the sender can be sure it has been distrebuted
-            Iterator<Touple> iterator = queue.iterator();
-            while (iterator.hasNext()) {
-                Touple touple = iterator.next();
-                // the id is checked since two nodes could send the same msgtext, and so one would thing the otherones message was its own when in reality the sequencer might ahve droped the message
-                if(touple.sender == id && touple.msg.equals(((SequencerMessage) message).msg)){
-                    iterator.remove();
-                }
-            }
+        //mcui.debug("islocked: " + token.isLocked() + " | mgs size: " + token.getMessages().size());
 
-        }else{
-            //only care about relevant messages
-            if(((DataMessage)message).seq > seqNumb){
-                
-                // if the sender of a sertain message recives it, the sender can be sure it has been distrebuted
-                Iterator<Touple> iterator = queue.iterator();
-                while (iterator.hasNext()) {
-                    Touple touple = iterator.next();
-                    // the id is checked since two nodes could send the same msgtext, and so one would thing the otherones message was its own when in reality the sequencer might ahve droped the message
-                    if(touple.sender == id && touple.msg.equals(((DataMessage)message).text)){
-                        iterator.remove();
-                    }
-                }
+        if(localToken == null || token.getSeq() > ((Token) localToken).getSeq()){
 
-                this.seqNumb = ((DataMessage)message).seq;
-                mcui.deliver(((DataMessage)message).getSender(), ((DataMessage)message).text);
-                
-                // flood the message if recived from the sequencer
-                if(peer == sequencerNode){ 
-                    for (int i = 0; i < hosts; i++) { 
-                        if(i == id || i == sequencerNode){
-                            continue;
-                        }else{
-                            bcom.basicsend(i, message);
-                        }
-                    }
-                }
+            Msg latestMsg = token.getMessages().get(token.getMessages().size() - 1);
+            mcui.deliver(latestMsg.getSender(), latestMsg.getMsg());
+        }
+
+        try {
+            localToken = token.clone();
+        } catch (CloneNotSupportedException e) {
+            e.printStackTrace();
+        }
+
+        if(token.isLocked() && lastAddedSeq == token.getSeq()){ //if we locked the tocken remove the lock after one round
+            token.setLock(false);
+            mcui.debug("unlock token");
+        }else if( !token.isLocked()){ // if there is messages in the queue send one and lock then token
+            if(!queue.isEmpty()){
+                mcui.debug("send message from queue");
+                token.addMessage(queue.remove());
+                lastAddedSeq = token.getSeq();
+                token.setLock(true);
             }
         }
+
+        
+        bcom.basicsend(getNextNodeInRing(), new TokenMessage(id, token));
     }
 
     /**
@@ -110,40 +91,17 @@ public class ExampleCaster extends Multicaster {
      */
     public void basicpeerdown(int peer) {
         mcui.debug("Peer "+peer+" has been dead for a while now!");
-
-        //update the local sequencer representation
-        alive[peer] = false;
-        if(peer == sequencerNode){
-            for (int i = 0; i < hosts; i++) {
-                if(alive[i]){
-                    sequencerNode = i;
-                    break;
-                }
-            }
-
-            for (int i = 0; i < alive.length; i++) {
-                if(alive[i] && i != id){
-                    bcom.basicsend(i, new SetNewSequnecer(id, peer, sequencerNode));
-                }
-            }
-
-            // some messages could be lost during the timeout, therefore check the queue and send again
-            for (Touple touple : queue) {
-                bcom.basicsend(sequencerNode, new SequencerMessage(id, touple.msg));
-            }
-        }
     }
 
     //used in the queue to make sure a message is broudcast
-    private class Touple{
-        public int sender;
-        public String msg;
-        Touple(int sender, String msg){
-            this.sender = sender;
-            this.msg = msg;
+    private int getNextNodeInRing(){
+        int next = (id + 1) % hosts;
+        while( !alive[next]){
+            next = (next + 1) % hosts;
         }
+        return next;
     }
-    
+
 }
 
 

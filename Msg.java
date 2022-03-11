@@ -6,12 +6,12 @@ import mcgui.*;
  *
  * @author Andreas Larsson &lt;larandr@chalmers.se&gt;
  */
-public class DataMessage extends Message {
+public class Msg extends Message implements IMsg {
         
     String text;
     public int seq;
         
-    public DataMessage(int sender, String text, int seq) {
+    public Msg(int sender, String text, int seq) {
         super(sender);
         this.text = text;
         this.seq = seq;

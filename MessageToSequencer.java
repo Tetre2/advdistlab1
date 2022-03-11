@@ -6,11 +6,11 @@ import mcgui.*;
  *
  * @author Andreas Larsson &lt;larandr@chalmers.se&gt;
  */
-public class SequencerMessage extends Message implements ISequencer {
+public class MessageToSequencer extends Message implements IMessageToSequencer {
         
     public String msg;
         
-    public SequencerMessage(int sender, String msg) {
+    public MessageToSequencer(int sender, String msg) {
         super(sender);
         this.msg = msg;
     }
